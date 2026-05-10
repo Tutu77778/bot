@@ -14,7 +14,7 @@ BOT_TOKEN = "8684547044:AAGVVDzmha4RlCLKgk_dI-DPecb20JbgFRo"
 
 ADMIN_GROUP_ID = -1003959266816
 ADMIN_IDS = [6209172297, 1852789843]
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyaCxVPrZnm6I8kGNgRtt3Mm5Qa0X5_bDeqH8Tw1hGII4_6fri2JsUQhOGFtvzQSVWEcv/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwwUCpBorG87GncpYOWpG71mHbKXOYsgtbyel01oQx_R9eZiFRtEZWhYzy9JaK2M7Lb/exec"
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
