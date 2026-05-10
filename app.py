@@ -9,7 +9,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 import aiohttp
 
 # ========== ТВОЙ ТОКЕН (ВСТАВЬ СВОЙ) ==========
-BOT_TOKEN = "8684547044:AAFduRU_IklCst-ParB4O9Yaxbxc7tqo54s"
+BOT_TOKEN = "8684547044:AAFduRU_IklCst-ParB4O9Yaxbcx7tqo54s"
 # =============================================
 
 ADMIN_GROUP_ID = -1003959266816
