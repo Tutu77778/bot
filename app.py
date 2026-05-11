@@ -89,7 +89,6 @@ class AddPromo(StatesGroup):
     limit = State()
     discount = State()
 
-# ========== ПРОМОКОДЫ ЧЕРЕЗ GOOGLE ==========
 async def check_promo_google(promo_code):
     async with aiohttp.ClientSession() as session:
         try:
@@ -321,11 +320,11 @@ async def process_order_action(callback: CallbackQuery):
     
     if action == 'cancel':
         new_status = 'cancelled'
-        user_message = "❌ Ваш заказ был отменён администратором.\n\nЕсли у вас есть вопросы, свяжитесь с нами."
+        user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[t.me/enforce1](t.me/enforce1)\n[t.me/artemixs_4](t.me/artemixs_4)"
         admin_message = "❌ Заказ отменён"
     elif action == 'complete':
         new_status = 'completed'
-        user_message = "✅ Ваш заказ выполнен!\n\nСпасибо за покупку! Ждём вас снова 🎮\n\nЕсли остались вопросы — обращайтесь."
+        user_message = "✅ Ваш заказ выполнен!\n\nСпасибо за покупку! Ждём вас снова 🎮"
         admin_message = "✅ Заказ выполнен"
     else:
         return
@@ -338,7 +337,8 @@ async def process_order_action(callback: CallbackQuery):
     try:
         await bot.send_message(
             user_id,
-            f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}"
+            f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}",
+            parse_mode="Markdown"
         )
     except:
         pass
