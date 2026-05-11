@@ -19,8 +19,9 @@ ADMIN_IDS = [6209172297, 1852789843]
 # Ссылка на канал
 CHANNEL_LINK = "https://t.me/agshopi"
 
-# Файл для хранения заказов
+# Файлы
 ORDERS_FILE = "orders.json"
+USERS_FILE = "users.json"
 
 def load_orders():
     if os.path.exists(ORDERS_FILE):
@@ -31,6 +32,25 @@ def load_orders():
 def save_orders(orders):
     with open(ORDERS_FILE, "w") as f:
         json.dump(orders, f, indent=4, ensure_ascii=False)
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=4, ensure_ascii=False)
+
+def get_next_order_number(user_id):
+    users = load_users()
+    user_id_str = str(user_id)
+    if user_id_str not in users:
+        users[user_id_str] = {"order_counter": 0}
+    users[user_id_str]["order_counter"] += 1
+    save_users(users)
+    return users[user_id_str]["order_counter"]
 
 def update_order_status(order_id, status):
     orders = load_orders()
@@ -121,8 +141,8 @@ async def show_profile(message: Message):
         status_counts[status] = status_counts.get(status, 0) + 1
     
     text = (
-        f"👤 **Ваш профиль**\n\n"
-        f"📦 Всего заказов: **{len(user_orders)}**\n\n"
+        f"👤 Ваш профиль\n\n"
+        f"📦 Всего заказов: {len(user_orders)}\n\n"
         f"📊 Статусы:\n"
         f"   ⏳ В обработке: {status_counts.get('pending', 0)}\n"
         f"   💳 Оплачено: {status_counts.get('paid', 0)}\n"
@@ -186,14 +206,17 @@ async def process_promo(message: Message, state: FSMContext):
     valid, discount = check_promo(promo_code)
     if valid:
         await state.update_data(promo_used=promo_code, discount=discount)
-        await message.answer(f"✅ Промокод **{promo_code}** активирован! Скидка: {discount}%")
+        await message.answer(f"✅ Промокод {promo_code} активирован! Скидка: {discount}%")
         await finish_order(message, state)
     else:
         await message.answer("❌ Промокод недействителен. Введите другой или «нет»")
 
 async def finish_order(message: Message, state: FSMContext):
     data = await state.get_data()
-    order_id = f"#{message.from_user.id}_{int(datetime.now().timestamp())}"
+    
+    # Получаем следующий номер заказа для этого пользователя
+    order_number = get_next_order_number(message.from_user.id)
+    order_id = str(order_number)
     
     order = {
         "order_id": order_id,
@@ -218,8 +241,8 @@ async def finish_order(message: Message, state: FSMContext):
     
     # Ответ пользователю
     await message.answer(
-        f"✅ **Ваш заказ принят!**\n\n"
-        f"📦 Номер заказа: `{order_id}`\n\n"
+        f"✅ Ваш заказ принят!\n\n"
+        f"Номер заказа: #{order_id}\n\n"
         f"Скоро с вами свяжется администратор.",
         reply_markup=main_keyboard(message.from_user.id)
     )
@@ -230,25 +253,25 @@ async def send_order_to_group(order):
     status_emoji = get_status_emoji(order['status'])
     
     text = (
-        f"{status_emoji} **ЗАКАЗ** `{order['order_id']}`\n\n"
-        f"🎮 **Игра:** {order['game']}\n"
-        f"📦 **Товар:** {order['item']}\n"
-        f"🔢 **Количество:** {order['quantity']}\n"
+        f"{status_emoji} Заказ #{order['order_id']}\n\n"
+        f"🎮 Игра: {order['game']}\n"
+        f"📦 Товар: {order['item']}\n"
+        f"🔢 Количество: {order['quantity']}\n"
     )
     if order.get('discount', 0) > 0:
-        text += f"🎟️ **Промокод:** {order['promo_used']} (скидка {order['discount']}%)\n"
+        text += f"🎟️ Промокод: {order['promo_used']} (скидка {order['discount']}%)\n"
     
-    text += f"\n👤 **Покупатель:** @{order['username']}\n"
-    text += f"🕒 **Время:** {datetime.fromisoformat(order['date']).strftime('%d.%m.%Y %H:%M:%S')}\n"
+    text += f"\n👤 Покупатель: @{order['username']}\n"
+    text += f"🕒 Время: {datetime.fromisoformat(order['date']).strftime('%d.%m.%Y %H:%M:%S')}\n"
     
     if order['status'] == "completed":
-        text = "✅ **ЗАКРЫТО**\n\n" + text
+        text = "✅ ЗАКРЫТО\n\n" + text
     elif order['status'] == "cancelled":
-        text = "❌ **ОТМЕНЕНО**\n\n" + text
+        text = "❌ ОТМЕНЕНО\n\n" + text
     elif order['status'] == "paid":
-        text = "💳 **ОПЛАЧЕНО**\n\n" + text
+        text = "💳 ОПЛАЧЕНО\n\n" + text
     
-    # Кнопки управления (только если заказ не выполнен и не отменён)
+    # Кнопки управления
     keyboard = []
     if order['status'] not in ["completed", "cancelled"]:
         keyboard = [
@@ -261,7 +284,6 @@ async def send_order_to_group(order):
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     
-    # Если заказ уже был отправлен — редактируем сообщение
     if order.get('message_id'):
         try:
             await bot.edit_message_text(
@@ -273,13 +295,11 @@ async def send_order_to_group(order):
         except:
             pass
     else:
-        # Отправляем новое сообщение
         if order.get('photo'):
             msg = await bot.send_photo(ADMIN_GROUP_ID, order['photo'], caption=text, reply_markup=markup)
         else:
             msg = await bot.send_message(ADMIN_GROUP_ID, text, reply_markup=markup)
         
-        # Сохраняем message_id для будущих обновлений
         orders = load_orders()
         for o in orders:
             if o['order_id'] == order['order_id']:
@@ -287,11 +307,11 @@ async def send_order_to_group(order):
                 save_orders(orders)
                 break
 
-# ========== ОБРАБОТКА КНОПОК УПРАВЛЕНИЯ ==========
+# ========== ОБРАБОТКА КНОПОК ==========
 @dp.callback_query(lambda c: c.data.startswith(('cancel_', 'paid_', 'complete_')))
 async def process_order_action(callback: CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("⛔ У вас нет прав", show_alert=True)
+        await callback.answer("⛔ Нет прав", show_alert=True)
         return
     
     action, order_id = callback.data.split('_', 1)
@@ -303,30 +323,27 @@ async def process_order_action(callback: CallbackQuery):
     
     user_id = order['user_id']
     status_map = {
-        'cancel': ('cancelled', '❌ Ваш заказ был **отменён** администратором.'),
-        'paid': ('paid', '💳 Ваш заказ **оплачен**! Скоро свяжемся с вами.'),
-        'complete': ('completed', '✅ Ваш заказ **выполнен**! Спасибо за покупку!')
+        'cancel': ('cancelled', '❌ Ваш заказ был отменён администратором.'),
+        'paid': ('paid', '💳 Ваш заказ оплачен! Скоро свяжемся с вами.'),
+        'complete': ('completed', '✅ Ваш заказ выполнен! Спасибо за покупку!')
     }
     
     new_status, user_message = status_map[action]
     
-    # Обновляем статус в базе
     update_order_status(order_id, new_status)
     order['status'] = new_status
     
-    # Обновляем сообщение в группе
     await send_order_to_group(order)
     
-    # Уведомляем покупателя
     try:
         await bot.send_message(
             user_id,
-            f"{user_message}\n\n📦 Заказ: `{order_id}`\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}"
+            f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}"
         )
     except:
         pass
     
-    await callback.answer(f"Статус заказа изменён на {new_status}")
+    await callback.answer(f"Статус заказа изменён")
     await callback.message.delete_reply_markup()
 
 # ========== АДМИН: ДОБАВЛЕНИЕ ПРОМОКОДА ==========
@@ -366,13 +383,12 @@ async def admin_add_promo_discount(message: Message, state: FSMContext):
     
     data = await state.get_data()
     add_promo(data['code'], data['limit'], int(discount))
-    await message.answer(f"✅ Промокод **{data['code']}** добавлен!\n📊 Лимит: {data['limit']}\n🎯 Скидка: {discount}%")
+    await message.answer(f"✅ Промокод {data['code']} добавлен!\n📊 Лимит: {data['limit']}\n🎯 Скидка: {discount}%")
     await state.clear()
 
 # ========== КОМАНДА /start ==========
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    # Отправляем приветствие с кнопкой на канал
     links_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📱 Наш канал", url=CHANNEL_LINK)]
     ])
@@ -380,11 +396,11 @@ async def cmd_start(message: Message):
         "🎮 Добро пожаловать в магазин!\n\n"
         "📝 Заполните заявку — и мы свяжемся с вами\n"
         "👤 В профиле можно посмотреть историю заказов\n\n"
-        "🔗 **Полезные ссылки:**",
+        "🔗 Полезные ссылки:",
         reply_markup=links_kb
     )
     await message.answer(
-        "📋 **Главное меню**",
+        "📋 Главное меню",
         reply_markup=main_keyboard(message.from_user.id)
     )
 
