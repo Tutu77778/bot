@@ -322,7 +322,7 @@ async def process_order_action(callback: CallbackQuery):
     if action == 'cancel':
         new_status = 'cancelled'
         # ЗДЕСЬ ВСТАВЬ СВОИ ССЫЛКИ (t.me/твой_ник)
-        user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[enforce1](enforce1)\n[artemixs_4](artemixs_4)"
+        user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[t.me/enforce1](t.me/enforce1)\n[t.me/artemixs_4](t.me/artemixs_4)"
         admin_message = "❌ Заказ отменён"
     elif action == 'complete':
         new_status = 'completed'
