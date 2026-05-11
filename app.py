@@ -16,10 +16,8 @@ BOT_TOKEN = "8684547044:AAGVVDzmha4RlCLKgk_dI-DPecb20JbgFRo"
 ADMIN_GROUP_ID = -1003959266816
 ADMIN_IDS = [6209172297, 1852789843]
 
-# Ссылка на канал
 CHANNEL_LINK = "https://t.me/agshopi"
 
-# Файлы
 ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
 
@@ -69,12 +67,10 @@ def get_order_by_id(order_id):
             return order
     return None
 
-# ========== ИНИЦИАЛИЗАЦИЯ БОТА ==========
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ========== СОСТОЯНИЯ ==========
 class OrderForm(StatesGroup):
     game = State()
     item = State()
@@ -88,7 +84,6 @@ class AddPromo(StatesGroup):
     limit = State()
     discount = State()
 
-# Промокоды
 promocodes = {}
 
 def add_promo(code: str, limit: int, discount: int):
@@ -105,7 +100,6 @@ def check_promo(code: str):
 
 add_promo("TEST10", 5, 10)
 
-# ========== КНОПКИ ==========
 def main_keyboard(user_id: int):
     keyboard = [
         [KeyboardButton(text="📝 Заполнить заявку")],
@@ -129,7 +123,6 @@ def get_status_emoji(status):
         return "❌"
     return "📦"
 
-# ========== ПРОФИЛЬ ==========
 @dp.message(F.text == "👤 Мой профиль")
 async def show_profile(message: Message):
     orders = load_orders()
@@ -151,7 +144,6 @@ async def show_profile(message: Message):
     )
     await message.answer(text, reply_markup=main_keyboard(message.from_user.id))
 
-# ========== ЗАЯВКА ==========
 @dp.message(F.text == "📝 Заполнить заявку")
 async def start_order(message: Message, state: FSMContext):
     await state.set_state(OrderForm.game)
@@ -244,10 +236,11 @@ async def finish_order(message: Message, state: FSMContext):
     
     await state.clear()
 
+# ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ ==========
 async def send_order_to_group(order):
     status_emoji = get_status_emoji(order['status'])
     
-    # НАЧАЛО ТЕКСТА - ДОБАВЛЯЕМ СТАТУСНУЮ СТРОКУ
+    # Формируем текст с заголовком в зависимости от статуса
     if order['status'] == "completed":
         header = "✅ ЗАКРЫТО\n\n"
     elif order['status'] == "cancelled":
@@ -257,7 +250,6 @@ async def send_order_to_group(order):
     else:
         header = ""
     
-    # ОСНОВНОЙ ТЕКСТ
     body = (
         f"{status_emoji} Заказ #{order['order_id']}\n\n"
         f"🎮 Игра: {order['game']}\n"
@@ -270,10 +262,9 @@ async def send_order_to_group(order):
     body += f"\n👤 Покупатель: @{order['username']}\n"
     body += f"🕒 Время: {datetime.fromisoformat(order['date']).strftime('%d.%m.%Y %H:%M:%S')}"
     
-    # СКЛЕИВАЕМ
     text = header + body
     
-    # Кнопки
+    # Кнопки только для активных заказов
     keyboard = []
     if order['status'] not in ["completed", "cancelled"]:
         keyboard = [
@@ -308,8 +299,8 @@ async def send_order_to_group(order):
                 o['message_id'] = msg.message_id
                 save_orders(orders)
                 break
+# =========================================
 
-# ========== ОБРАБОТКА КНОПОК ==========
 @dp.callback_query(lambda c: c.data.startswith(('cancel_', 'paid_', 'complete_')))
 async def process_order_action(callback: CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
@@ -352,7 +343,6 @@ async def process_order_action(callback: CallbackQuery):
     except:
         pass
 
-# ========== АДМИН: ПРОМОКОДЫ ==========
 @dp.message(F.text == "➕ Добавить промокод")
 async def admin_add_promo_start(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -392,7 +382,6 @@ async def admin_add_promo_discount(message: Message, state: FSMContext):
     await message.answer(f"✅ Промокод {data['code']} добавлен!\n📊 Лимит: {data['limit']}\n🎯 Скидка: {discount}%")
     await state.clear()
 
-# ========== СТАРТ ==========
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     links_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -409,7 +398,6 @@ async def cmd_start(message: Message):
         reply_markup=main_keyboard(message.from_user.id)
     )
 
-# ========== ЗАПУСК ==========
 async def main():
     print("🤖 Бот запущен!")
     print(f"Администраторы: {ADMIN_IDS}")
