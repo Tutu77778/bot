@@ -316,11 +316,13 @@ async def process_order_action(callback: CallbackQuery):
         await callback.answer("Заказ не найден", show_alert=True)
         return
     
-    user_id = order['user_id']
+    # ID покупателя, который сделал заказ
+    buyer_user_id = order['user_id']
     
     if action == 'cancel':
         new_status = 'cancelled'
-        user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[t.me/enforce1](t.me/enforce1)\n[t.me/artemixs_4](t.me/artemixs_4)"
+        # ЗДЕСЬ ВСТАВЬ СВОИ ССЫЛКИ (t.me/твой_ник)
+        user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[enforce1](enforce1)\n[artemixs_4](artemixs_4)"
         admin_message = "❌ Заказ отменён"
     elif action == 'complete':
         new_status = 'completed'
@@ -334,14 +336,15 @@ async def process_order_action(callback: CallbackQuery):
     
     await send_order_to_group(order)
     
+    # Отправляем сообщение ПОКУПАТЕЛЮ (не админу!)
     try:
         await bot.send_message(
-            user_id,
+            buyer_user_id,
             f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}",
             parse_mode="Markdown"
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"Не удалось отправить сообщение покупателю: {e}")
     
     await callback.answer(admin_message)
     
