@@ -247,15 +247,18 @@ async def finish_order(message: Message, state: FSMContext):
 async def send_order_to_group(order):
     status_emoji = get_status_emoji(order['status'])
     
-    if order['status'] == "completed":
-        text = f"✅ ЗАКРЫТО\n\n"
-    elif order['status'] == "cancelled":
-        text = f"❌ ОТМЕНЕНО\n\n"
-    elif order['status'] == "paid":
-        text = f"💳 ОПЛАЧЕНО\n\n"
-    else:
-        text = ""
+    # Формируем текст
+    text = ""
     
+    # Добавляем статусную строку в зависимости от статуса
+    if order['status'] == "completed":
+        text += "✅ ЗАКРЫТО\n\n"
+    elif order['status'] == "cancelled":
+        text += "❌ ОТМЕНЕНО\n\n"
+    elif order['status'] == "paid":
+        text += "💳 ОПЛАЧЕНО\n\n"
+    
+    # Основная информация о заказе
     text += (
         f"{status_emoji} Заказ #{order['order_id']}\n\n"
         f"🎮 Игра: {order['game']}\n"
@@ -346,9 +349,9 @@ async def process_order_action(callback: CallbackQuery):
     except:
         pass
     
-    await callback.answer(f"Статус заказа изменён на {new_status}")
+    await callback.answer(f"Статус заказа изменён")
     
-    # Убираем кнопки у callback-сообщения, чтобы они не висели
+    # Убираем кнопки у callback-сообщения
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except:
