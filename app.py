@@ -217,7 +217,7 @@ async def finish_order(message: Message, state: FSMContext):
     
     order = {
         "order_id": order_id,
-        "user_id": message.from_user.id,
+        "user_id": message.from_user.id,  # ID покупателя
         "username": data['username'],
         "game": data['game'],
         "item": data['item'],
@@ -317,11 +317,13 @@ async def process_order_action(callback: CallbackQuery):
         return
     
     # ID покупателя, который сделал заказ
-    buyer_user_id = order['user_id']
+    buyer_user_id = int(order['user_id'])
+    
+    print(f"DEBUG: Действие {action}, заказ {order_id}, покупатель {buyer_user_id}")
     
     if action == 'cancel':
         new_status = 'cancelled'
-        # ЗДЕСЬ ВСТАВЬ СВОИ ССЫЛКИ (t.me/твой_ник)
+        # ЗДЕСЬ ВСТАВЬ СВОИ ССЫЛКИ
         user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[t.me/enforce1](t.me/enforce1)\n[t.me/artemixs_4](t.me/artemixs_4)"
         admin_message = "❌ Заказ отменён"
     elif action == 'complete':
@@ -336,15 +338,16 @@ async def process_order_action(callback: CallbackQuery):
     
     await send_order_to_group(order)
     
-    # Отправляем сообщение ПОКУПАТЕЛЮ (не админу!)
+    # Отправляем сообщение ПОКУПАТЕЛЮ
     try:
         await bot.send_message(
-            buyer_user_id,
-            f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}",
+            chat_id=buyer_user_id,
+            text=f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}",
             parse_mode="Markdown"
         )
+        print(f"✅ Сообщение отправлено покупателю {buyer_user_id}")
     except Exception as e:
-        print(f"Не удалось отправить сообщение покупателю: {e}")
+        print(f"❌ Ошибка отправки покупателю {buyer_user_id}: {e}")
     
     await callback.answer(admin_message)
     
