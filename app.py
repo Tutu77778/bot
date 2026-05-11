@@ -118,6 +118,12 @@ def main_keyboard(user_id: int):
         keyboard.append([KeyboardButton(text="➕ Добавить промокод")])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
+# Клавиатура для отмены во время заполнения заявки
+cancel_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="❌ Отменить заказ")]],
+    resize_keyboard=True
+)
+
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
@@ -150,51 +156,107 @@ async def show_profile(message: Message):
     )
     await message.answer(text, reply_markup=main_keyboard(message.from_user.id))
 
+# Обработчик отмены заказа пользователем
+@dp.message(F.text == "❌ Отменить заказ")
+async def cancel_order(message: Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is not None:
+        await state.clear()
+        await message.answer(
+            "❌ Создание заказа отменено.\n\n"
+            "Если передумаете — нажмите «📝 Заполнить заявку» снова.",
+            reply_markup=main_keyboard(message.from_user.id)
+        )
+    else:
+        await message.answer(
+            "У вас нет активного заказа для отмены.",
+            reply_markup=main_keyboard(message.from_user.id)
+        )
+
 @dp.message(F.text == "📝 Заполнить заявку")
 async def start_order(message: Message, state: FSMContext):
     await state.set_state(OrderForm.game)
-    await message.answer("🎮 Шаг 1/6: Введите название игры")
+    await message.answer(
+        "🎮 Шаг 1/6: Введите название игры\n\n"
+        "Если передумаете — нажмите «❌ Отменить заказ»",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.game)
 async def process_game(message: Message, state: FSMContext):
+    if message.text == "❌ Отменить заказ":
+        await cancel_order(message, state)
+        return
     await state.update_data(game=message.text)
     await state.set_state(OrderForm.item)
-    await message.answer("📦 Шаг 2/6: Введите название товара")
+    await message.answer(
+        "📦 Шаг 2/6: Введите название товара",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.item)
 async def process_item(message: Message, state: FSMContext):
+    if message.text == "❌ Отменить заказ":
+        await cancel_order(message, state)
+        return
     await state.update_data(item=message.text)
     await state.set_state(OrderForm.photo)
-    await message.answer("🖼️ Шаг 3/6: Пришлите фото товара")
+    await message.answer(
+        "🖼️ Шаг 3/6: Пришлите фото товара",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.photo, F.photo)
 async def process_photo(message: Message, state: FSMContext):
     await state.update_data(photo=message.photo[-1].file_id)
     await state.set_state(OrderForm.quantity)
-    await message.answer("🔢 Шаг 4/6: Введите количество")
+    await message.answer(
+        "🔢 Шаг 4/6: Введите количество",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.photo)
 async def process_photo_invalid(message: Message):
-    await message.answer("❌ Отправьте фото!")
+    await message.answer(
+        "❌ Отправьте фото!\n\n"
+        "Или нажмите «❌ Отменить заказ» чтобы отменить создание заявки.",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.quantity)
 async def process_quantity(message: Message, state: FSMContext):
+    if message.text == "❌ Отменить заказ":
+        await cancel_order(message, state)
+        return
     if not message.text.isdigit():
-        await message.answer("❌ Введите число!")
+        await message.answer("❌ Введите число!", reply_markup=cancel_keyboard)
         return
     await state.update_data(quantity=int(message.text))
     await state.set_state(OrderForm.username)
-    await message.answer("👤 Шаг 5/6: Введите ваш Telegram username (без @)")
+    await message.answer(
+        "👤 Шаг 5/6: Введите ваш Telegram username (без @)",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.username)
 async def process_username(message: Message, state: FSMContext):
+    if message.text == "❌ Отменить заказ":
+        await cancel_order(message, state)
+        return
     username = message.text.strip().lstrip('@')
     await state.update_data(username=username)
     await state.set_state(OrderForm.promo)
-    await message.answer("🎟️ Шаг 6/6: Введите промокод (если нет — напишите «нет»)")
+    await message.answer(
+        "🎟️ Шаг 6/6: Введите промокод (если нет — напишите «нет»)",
+        reply_markup=cancel_keyboard
+    )
 
 @dp.message(OrderForm.promo)
 async def process_promo(message: Message, state: FSMContext):
+    if message.text == "❌ Отменить заказ":
+        await cancel_order(message, state)
+        return
+    
     promo_code = message.text.strip().upper()
     if promo_code in ["НЕТ", "NO", "SKIP"]:
         await state.update_data(promo_used=None, discount=0)
@@ -207,7 +269,10 @@ async def process_promo(message: Message, state: FSMContext):
         await message.answer(f"✅ Промокод {promo_code} активирован! Скидка: {discount}%")
         await finish_order(message, state)
     else:
-        await message.answer("❌ Промокод недействителен. Введите другой или напишите «нет»")
+        await message.answer(
+            "❌ Промокод недействителен. Введите другой или напишите «нет»",
+            reply_markup=cancel_keyboard
+        )
 
 async def finish_order(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -217,7 +282,7 @@ async def finish_order(message: Message, state: FSMContext):
     
     order = {
         "order_id": order_id,
-        "user_id": message.from_user.id,  # ID покупателя
+        "user_id": message.from_user.id,
         "username": data['username'],
         "game": data['game'],
         "item": data['item'],
@@ -316,14 +381,10 @@ async def process_order_action(callback: CallbackQuery):
         await callback.answer("Заказ не найден", show_alert=True)
         return
     
-    # ID покупателя, который сделал заказ
     buyer_user_id = int(order['user_id'])
-    
-    print(f"DEBUG: Действие {action}, заказ {order_id}, покупатель {buyer_user_id}")
     
     if action == 'cancel':
         new_status = 'cancelled'
-        # ЗДЕСЬ ВСТАВЬ СВОИ ССЫЛКИ
         user_message = "❌ Ваш заказ был отменён администратором.\n\nПо всем вопросам:\n[t.me/enforce1](t.me/enforce1)\n[t.me/artemixs_4](t.me/artemixs_4)"
         admin_message = "❌ Заказ отменён"
     elif action == 'complete':
@@ -338,16 +399,14 @@ async def process_order_action(callback: CallbackQuery):
     
     await send_order_to_group(order)
     
-    # Отправляем сообщение ПОКУПАТЕЛЮ
     try:
         await bot.send_message(
             chat_id=buyer_user_id,
             text=f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {order['game']} | {order['item']}\n🔢 Количество: {order['quantity']}",
             parse_mode="Markdown"
         )
-        print(f"✅ Сообщение отправлено покупателю {buyer_user_id}")
     except Exception as e:
-        print(f"❌ Ошибка отправки покупателю {buyer_user_id}: {e}")
+        print(f"Ошибка отправки покупателю: {e}")
     
     await callback.answer(admin_message)
     
