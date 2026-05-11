@@ -247,31 +247,33 @@ async def finish_order(message: Message, state: FSMContext):
 async def send_order_to_group(order):
     status_emoji = get_status_emoji(order['status'])
     
-    # Формируем текст
-    text = ""
-    
-    # Добавляем статусную строку в зависимости от статуса
+    # НАЧАЛО ТЕКСТА - ДОБАВЛЯЕМ СТАТУСНУЮ СТРОКУ
     if order['status'] == "completed":
-        text += "✅ ЗАКРЫТО\n\n"
+        header = "✅ ЗАКРЫТО\n\n"
     elif order['status'] == "cancelled":
-        text += "❌ ОТМЕНЕНО\n\n"
+        header = "❌ ОТМЕНЕНО\n\n"
     elif order['status'] == "paid":
-        text += "💳 ОПЛАЧЕНО\n\n"
+        header = "💳 ОПЛАЧЕНО\n\n"
+    else:
+        header = ""
     
-    # Основная информация о заказе
-    text += (
+    # ОСНОВНОЙ ТЕКСТ
+    body = (
         f"{status_emoji} Заказ #{order['order_id']}\n\n"
         f"🎮 Игра: {order['game']}\n"
         f"📦 Товар: {order['item']}\n"
         f"🔢 Количество: {order['quantity']}\n"
     )
     if order.get('discount', 0) > 0:
-        text += f"🎟️ Промокод: {order['promo_used']} (скидка {order['discount']}%)\n"
+        body += f"🎟️ Промокод: {order['promo_used']} (скидка {order['discount']}%)\n"
     
-    text += f"\n👤 Покупатель: @{order['username']}\n"
-    text += f"🕒 Время: {datetime.fromisoformat(order['date']).strftime('%d.%m.%Y %H:%M:%S')}"
+    body += f"\n👤 Покупатель: @{order['username']}\n"
+    body += f"🕒 Время: {datetime.fromisoformat(order['date']).strftime('%d.%m.%Y %H:%M:%S')}"
     
-    # Кнопки только для активных заказов
+    # СКЛЕИВАЕМ
+    text = header + body
+    
+    # Кнопки
     keyboard = []
     if order['status'] not in ["completed", "cancelled"]:
         keyboard = [
@@ -284,7 +286,6 @@ async def send_order_to_group(order):
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     
-    # Если у заказа есть message_id — редактируем существующее сообщение
     if order.get('message_id'):
         try:
             await bot.edit_message_text(
@@ -296,13 +297,11 @@ async def send_order_to_group(order):
         except Exception as e:
             print(f"Ошибка редактирования: {e}")
     else:
-        # Отправляем новое сообщение
         if order.get('photo'):
             msg = await bot.send_photo(ADMIN_GROUP_ID, order['photo'], caption=text, reply_markup=markup)
         else:
             msg = await bot.send_message(ADMIN_GROUP_ID, text, reply_markup=markup)
         
-        # Сохраняем message_id
         orders = load_orders()
         for o in orders:
             if o['order_id'] == order['order_id']:
@@ -333,14 +332,11 @@ async def process_order_action(callback: CallbackQuery):
     
     new_status, user_message = status_map[action]
     
-    # Обновляем статус
     update_order_status(order_id, new_status)
     order['status'] = new_status
     
-    # Обновляем сообщение в группе
     await send_order_to_group(order)
     
-    # Уведомляем пользователя
     try:
         await bot.send_message(
             user_id,
@@ -351,7 +347,6 @@ async def process_order_action(callback: CallbackQuery):
     
     await callback.answer(f"Статус заказа изменён")
     
-    # Убираем кнопки у callback-сообщения
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except:
