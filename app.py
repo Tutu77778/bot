@@ -686,6 +686,7 @@ async def finish_order(message: Message, state: FSMContext):
 async def send_order_to_group(order, is_new=False):
     status_emoji = get_status_emoji(order['status'])
     
+    # Формируем заголовок в зависимости от статуса
     if order['status'] == "completed":
         header = "✅ ЗАКРЫТО\n\n"
     elif order['status'] == "cancelled":
@@ -709,6 +710,7 @@ async def send_order_to_group(order, is_new=False):
     
     text = header + body
     
+    # Кнопки только для статуса pending
     keyboard = []
     if order['status'] == "pending":
         keyboard = [
@@ -720,6 +722,7 @@ async def send_order_to_group(order, is_new=False):
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     
+    # Если сообщение уже существует и мы не в режиме нового заказа - редактируем
     if not is_new and order.get('message_id'):
         try:
             await bot.edit_message_text(
@@ -728,9 +731,11 @@ async def send_order_to_group(order, is_new=False):
                 text=text,
                 reply_markup=markup
             )
+            print(f"✅ Сообщение в группе обновлено (статус: {order['status']})")
         except Exception as e:
             print(f"Ошибка редактирования: {e}")
     else:
+        # Отправляем новое сообщение
         if order.get('photo'):
             msg = await bot.send_photo(ADMIN_GROUP_ID, order['photo'], caption=text, reply_markup=markup)
         else:
@@ -742,6 +747,7 @@ async def send_order_to_group(order, is_new=False):
                 o['message_id'] = msg.message_id
                 save_orders(orders)
                 break
+        print(f"✅ Новое сообщение в группе (статус: {order['status']})")
 
 @dp.callback_query(lambda c: c.data.startswith(('cancel_', 'complete_')))
 async def process_order_action(callback: CallbackQuery):
