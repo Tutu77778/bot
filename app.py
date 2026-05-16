@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import secrets
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -125,9 +124,6 @@ async def add_promo_google(code, limit, discount):
         except:
             return False, "Ошибка подключения"
 
-def generate_ref_link(user_id):
-    return f"https://t.me/{bot.username}?start=ref_{user_id}"
-
 def add_bonus_to_user(user_id, amount):
     users = load_users()
     user_id_str = str(user_id)
@@ -192,6 +188,13 @@ def get_status_emoji(status):
         return "❌"
     return "📦"
 
+async def get_username(user_id):
+    try:
+        user = await bot.get_chat(user_id)
+        return user.username or f"user_{user_id}"
+    except:
+        return f"user_{user_id}"
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     args = message.text.split()
@@ -245,8 +248,8 @@ async def show_ref_link(message: Message):
         f"💰 Бонусный баланс: {get_user_bonus(message.from_user.id)} BYN\n\n"
         f"💡 Как это работает:\n"
         f"• Пригласите друга по вашей ссылке\n"
-        f"• Когда он сделает заказ, администратор начислит вам 5% от суммы заказа\n"
-        f"• Бонусы можно использовать при следующем заказе (до 100% суммы)"
+        f"• Когда он сделает заказ, администратор начислит вам бонус\n"
+        f"• Бонусы можно использовать при следующем заказе"
     )
     await message.answer(text, parse_mode="Markdown", reply_markup=main_keyboard(message.from_user.id))
 
@@ -270,8 +273,7 @@ async def show_profile(message: Message):
         f"   ⏳ В обработке: {status_counts.get('pending', 0)}\n"
         f"   ✅ Выполнено: {status_counts.get('completed', 0)}\n"
         f"   ❌ Отменено: {status_counts.get('cancelled', 0)}\n\n"
-        f"💡 Бонусы начисляются администратором за приглашённых друзей.\n"
-        f"💰 Бонусами можно оплатить до 100% следующего заказа."
+        f"💡 Бонусы начисляются администратором за приглашённых друзей."
     )
     await message.answer(text, reply_markup=main_keyboard(message.from_user.id))
 
@@ -281,44 +283,19 @@ async def admin_ref_panel(message: Message):
         await message.answer("⛔ Нет прав")
         return
     
-    referrals = load_referrals()
     users = load_users()
     
-    text = "📊 **Реферальная система**\n\n"
-    
-    all_users = {}
-    for uid, data in users.items():
-        all_users[int(uid)] = data
-    
-    referred_users = {}
-    for uid, data in referrals.items():
-        referred_by = data.get("referred_by")
-        if referred_by not in referred_users:
-            referred_users[referred_by] = []
-        referred_users[referred_by].append(int(uid))
-    
-    text += "👥 **Кого пригласили:**\n"
-    for referrer, refs in referred_users.items():
-        text += f"👤 @{await get_username(referrer)} — {len(refs)} чел.\n"
-    
-    text += "\n📋 **Кнопки управления:**\n"
-    text += "• Нажми на пользователя → выбери действие\n"
-    text += "• Начисли бонус → введи сумму → бот отправит уведомление"
+    text = "📊 **Панель управления бонусами**\n\n"
+    text += "Нажми на пользователя, чтобы начислить бонус.\n\n"
+    text += "👥 **Список пользователей:**"
     
     keyboard = []
-    for uid in all_users:
-        username = await get_username(uid)
+    for uid in users:
+        username = await get_username(int(uid))
         keyboard.append([InlineKeyboardButton(text=f"👤 {username}", callback_data=f"user_{uid}")])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     await message.answer(text, reply_markup=markup, parse_mode="Markdown")
-
-async def get_username(user_id):
-    try:
-        user = await bot.get_chat(user_id)
-        return user.username or f"user_{user_id}"
-    except:
-        return f"user_{user_id}"
 
 @dp.callback_query(lambda c: c.data.startswith("user_"))
 async def user_detail(callback: CallbackQuery):
@@ -365,7 +342,7 @@ async def back_to_users(callback: CallbackQuery):
         keyboard.append([InlineKeyboardButton(text=f"👤 {username}", callback_data=f"user_{uid}")])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
-    text = "📊 **Реферальная система**\n\nНажми на пользователя для управления бонусами."
+    text = "📊 **Панель управления бонусами**\n\nНажми на пользователя, чтобы начислить бонус."
     await callback.message.edit_text(text, reply_markup=markup, parse_mode="Markdown")
     await callback.answer()
 
@@ -378,7 +355,7 @@ async def add_bonus_start(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.data.split("_")[2])
     await state.update_data(bonus_user_id=user_id)
     await state.set_state(AddBonus.amount)
-    await callback.message.answer(f"💰 Введите сумму бонуса для пользователя @{await get_username(user_id)} (в BYN):")
+    await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(user_id)}:")
     await callback.answer()
 
 @dp.message(AddBonus.amount)
@@ -401,17 +378,20 @@ async def add_bonus_amount(message: Message, state: FSMContext):
     
     new_balance = add_bonus_to_user(user_id, amount)
     
+    # Отправляем уведомление пользователю
     try:
         await bot.send_message(
             user_id,
-            f"🎉 Вам начислен бонус в размере {amount} BYN!\n\n"
-            f"💰 Ваш текущий бонусный баланс: {new_balance} BYN\n\n"
-            f"Бонусы можно использовать при следующем заказе."
+            f"🎉 **Вам начислен бонус!**\n\n"
+            f"💰 Сумма: {amount} BYN\n"
+            f"💎 Ваш бонусный баланс: {new_balance} BYN\n\n"
+            f"Бонусы можно использовать при следующем заказе.",
+            parse_mode="Markdown"
         )
     except:
         pass
     
-    await message.answer(f"✅ Начислено {amount} BYN пользователю. Новый баланс: {new_balance} BYN")
+    await message.answer(f"✅ Начислено {amount} BYN пользователю @{await get_username(user_id)}\n💰 Новый баланс: {new_balance} BYN")
     await state.clear()
 
 @dp.message(F.text == "❌ Отменить заказ")
@@ -434,7 +414,7 @@ async def cancel_order(message: Message, state: FSMContext):
 async def start_order(message: Message, state: FSMContext):
     await state.set_state(OrderForm.game)
     await message.answer(
-        "🎮 Шаг 1/7: Введите название игры\n\n"
+        "🎮 Шаг 1/6: Введите название игры\n\n"
         "Если передумаете — нажмите «❌ Отменить заказ»",
         reply_markup=cancel_keyboard
     )
@@ -446,7 +426,7 @@ async def process_game(message: Message, state: FSMContext):
         return
     await state.update_data(game=message.text)
     await state.set_state(OrderForm.item)
-    await message.answer("📦 Шаг 2/7: Введите название товара", reply_markup=cancel_keyboard)
+    await message.answer("📦 Шаг 2/6: Введите название товара", reply_markup=cancel_keyboard)
 
 @dp.message(OrderForm.item)
 async def process_item(message: Message, state: FSMContext):
@@ -455,13 +435,13 @@ async def process_item(message: Message, state: FSMContext):
         return
     await state.update_data(item=message.text)
     await state.set_state(OrderForm.photo)
-    await message.answer("🖼️ Шаг 3/7: Пришлите фото товара", reply_markup=cancel_keyboard)
+    await message.answer("🖼️ Шаг 3/6: Пришлите фото товара", reply_markup=cancel_keyboard)
 
 @dp.message(OrderForm.photo, F.photo)
 async def process_photo(message: Message, state: FSMContext):
     await state.update_data(photo=message.photo[-1].file_id)
     await state.set_state(OrderForm.quantity)
-    await message.answer("🔢 Шаг 4/7: Введите количество", reply_markup=cancel_keyboard)
+    await message.answer("🔢 Шаг 4/6: Введите количество", reply_markup=cancel_keyboard)
 
 @dp.message(OrderForm.photo)
 async def process_photo_invalid(message: Message):
@@ -477,7 +457,7 @@ async def process_quantity(message: Message, state: FSMContext):
         return
     await state.update_data(quantity=int(message.text))
     await state.set_state(OrderForm.username)
-    await message.answer("👤 Шаг 5/7: Введите ваш Telegram username (без @)", reply_markup=cancel_keyboard)
+    await message.answer("👤 Шаг 5/6: Введите ваш Telegram username (без @)", reply_markup=cancel_keyboard)
 
 @dp.message(OrderForm.username)
 async def process_username(message: Message, state: FSMContext):
@@ -487,7 +467,7 @@ async def process_username(message: Message, state: FSMContext):
     username = message.text.strip().lstrip('@')
     await state.update_data(username=username)
     await state.set_state(OrderForm.promo)
-    await message.answer("🎟️ Шаг 6/7: Введите промокод (если нет — напишите «нет»)", reply_markup=cancel_keyboard)
+    await message.answer("🎟️ Шаг 6/6: Введите промокод (если нет — напишите «нет»)", reply_markup=cancel_keyboard)
 
 @dp.message(OrderForm.promo)
 async def process_promo(message: Message, state: FSMContext):
@@ -532,7 +512,8 @@ async def ask_use_bonus(message: Message, state: FSMContext):
         await state.set_state(OrderForm.use_bonus)
         await message.answer(
             f"💰 У вас есть бонусы: {bonus_balance} BYN\n\n"
-            f"Желаете использовать их для оплаты заказа?",
+            f"Желаете использовать их для оплаты заказа?\n\n"
+            f"(Бонусы сгорят после использования)",
             reply_markup=bonus_keyboard
         )
     else:
@@ -542,7 +523,6 @@ async def ask_use_bonus(message: Message, state: FSMContext):
 @dp.message(OrderForm.use_bonus)
 async def process_use_bonus(message: Message, state: FSMContext):
     data = await state.get_data()
-    has_promo = data.get('promo_used') is not None
     bonus_balance = get_user_bonus(message.from_user.id)
     
     if message.text == "🎟️ Оставить промокод (без бонусов)":
@@ -558,10 +538,10 @@ async def process_use_bonus(message: Message, state: FSMContext):
     
     if message.text == "✅ Да, использовать бонусы":
         if bonus_balance <= 0:
-            await message.answer("❌ У вас нет бонусов для использования!", reply_markup=cancel_keyboard)
+            await message.answer("❌ У вас нет бонусов для использования! Приглашайте друзей, чтобы получать бонусы.", reply_markup=cancel_keyboard)
             return
         await state.update_data(used_bonus=bonus_balance)
-        await message.answer(f"✅ Будут использованы бонусы: {bonus_balance} BYN")
+        await message.answer(f"✅ Будут использованы бонусы: {bonus_balance} BYN\n\n💰 Вы сможете оплатить заказ полностью или частично при встрече с администратором.")
         await finish_order(message, state)
     
     elif message.text == "❌ Нет, не использовать":
@@ -599,11 +579,15 @@ async def finish_order(message: Message, state: FSMContext):
     
     await send_order_to_group(order)
     
+    bonus_text = ""
+    if used_bonus > 0:
+        bonus_text = f"\n\n💰 Списано бонусов: {used_bonus} BYN"
+    
     await message.answer(
         f"✅ Ваш заказ принят!\n\n"
-        f"Номер заказа: #{order_id}\n\n"
+        f"📦 Номер заказа: #{order_id}\n\n"
         f"Скоро с вами свяжется администратор.\n"
-        f"Спасибо, что выбрали нас! 🎮",
+        f"Спасибо, что выбрали нас! 🎮{bonus_text}",
         reply_markup=main_keyboard(message.from_user.id)
     )
     
@@ -628,7 +612,7 @@ async def send_order_to_group(order):
     if order.get('promo_discount', 0) > 0:
         body += f"🎟️ Промокод: {order['promo_used']} (скидка {order['promo_discount']}%)\n"
     if order.get('used_bonus', 0) > 0:
-        body += f"💰 Списано бонусов: {order['used_bonus']} BYN\n"
+        body += f"💰 Бонусов к списанию: {order['used_bonus']} BYN\n"
     
     body += f"\n👤 Покупатель: @{order['username']}\n"
     body += f"🕒 Время: {datetime.fromisoformat(order['date']).strftime('%d.%m.%Y %H:%M:%S')}"
@@ -683,8 +667,6 @@ async def process_order_action(callback: CallbackQuery):
         return
     
     buyer_user_id = int(order['user_id'])
-    
-    # Сохраняем информацию о заказе до изменения статуса
     game = order.get('game', '')
     item = order.get('item', '')
     quantity = order.get('quantity', '')
@@ -710,21 +692,14 @@ async def process_order_action(callback: CallbackQuery):
     
     await send_order_to_group(order)
     
-    # Отправляем сообщение ПОКУПАТЕЛЮ
     try:
         await bot.send_message(
             chat_id=buyer_user_id,
-            text=(
-                f"{user_message}\n\n"
-                f"📦 Заказ #{order_id}\n"
-                f"🎮 {game} | {item}\n"
-                f"🔢 Количество: {quantity}"
-            ),
+            text=f"{user_message}\n\n📦 Заказ #{order_id}\n🎮 {game} | {item}\n🔢 Количество: {quantity}",
             parse_mode="Markdown"
         )
-        print(f"✅ Сообщение отправлено покупателю {buyer_user_id}")
-    except Exception as e:
-        print(f"❌ Ошибка отправки покупателю {buyer_user_id}: {e}")
+    except:
+        pass
     
     await callback.answer(admin_message)
 
@@ -771,6 +746,7 @@ async def admin_add_promo_discount(message: Message, state: FSMContext):
     await state.clear()
 
 async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
     print("🤖 Бот запущен!")
     print(f"Администраторы: {ADMIN_IDS}")
     print(f"Группа заказов: {ADMIN_GROUP_ID}")
