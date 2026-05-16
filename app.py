@@ -372,7 +372,7 @@ async def user_detail(callback: CallbackQuery):
     
     if referred_by:
         text += f"🔗 Приглашён пользователем: @{await get_username(referred_by)}\n\n"
-        text += f"👇 Нажмите кнопку ниже, чтобы начислить бонус **пригласившему** (@{await get_username(referred_by)}) за этого реферала."
+        text += f"👇 Нажмите кнопку ниже, чтобы начислить бонус **пригласившему** (@{await get_username(referred_by)}) за покупки этого реферала."
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💰 Начислить бонус пригласившему", callback_data=f"bonus_to_referrer_{user_id}")],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
@@ -424,7 +424,7 @@ async def bonus_to_referrer(callback: CallbackQuery, state: FSMContext):
     
     await state.update_data(bonus_user_id=referrer_id, referred_user_id=referred_user_id)
     await state.set_state(AddBonus.amount)
-    await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(referrer_id)}\n(бонус за приглашение @{await get_username(referred_user_id)})")
+    await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(referrer_id)}\n(бонус за покупку его реферала @{await get_username(referred_user_id)})")
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("direct_bonus_"))
@@ -460,7 +460,12 @@ async def add_bonus_amount(message: Message, state: FSMContext):
     
     new_balance = add_bonus_to_user(user_id, amount)
     
-    bonus_text = f"за приглашение @{await get_username(referred_user_id)}" if referred_user_id else ""
+    # Правильное сообщение: бонус за покупку реферала
+    if referred_user_id:
+        referred_username = await get_username(referred_user_id)
+        bonus_text = f"за покупку вашего реферала @{referred_username}"
+    else:
+        bonus_text = ""
     
     try:
         await bot.send_message(
