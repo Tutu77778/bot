@@ -237,16 +237,20 @@ async def cmd_start(message: Message):
 
 @dp.message(F.text == "🔗 Моя реферальная ссылка")
 async def show_ref_link(message: Message):
-    link = f"https://t.me/{bot.username}?start=ref_{message.from_user.id}"
+    # Получаем username бота динамически
+    bot_info = await bot.get_me()
+    bot_username = bot_info.username
+    
+    link = f"https://t.me/{bot_username}?start=ref_{message.from_user.id}"
     referrals = load_referrals()
     my_refs = [uid for uid, data in referrals.items() if data.get("referred_by") == message.from_user.id]
     
     text = (
-        f"🔗 Ваша реферальная ссылка:\n"
+        f"🔗 **Ваша реферальная ссылка:**\n"
         f"`{link}`\n\n"
         f"👥 Приглашено друзей: {len(my_refs)}\n"
         f"💰 Бонусный баланс: {get_user_bonus(message.from_user.id)} BYN\n\n"
-        f"💡 Как это работает:\n"
+        f"💡 **Как это работает:**\n"
         f"• Пригласите друга по вашей ссылке\n"
         f"• Когда он сделает заказ, администратор начислит вам бонус\n"
         f"• Бонусы можно использовать при следующем заказе"
@@ -266,7 +270,7 @@ async def show_profile(message: Message):
     bonus = get_user_bonus(message.from_user.id)
     
     text = (
-        f"👤 Ваш профиль\n\n"
+        f"👤 **Ваш профиль**\n\n"
         f"📦 Всего заказов: {len(user_orders)}\n"
         f"💰 Бонусный баланс: {bonus} BYN\n\n"
         f"📊 Статусы заказов:\n"
@@ -275,7 +279,7 @@ async def show_profile(message: Message):
         f"   ❌ Отменено: {status_counts.get('cancelled', 0)}\n\n"
         f"💡 Бонусы начисляются администратором за приглашённых друзей."
     )
-    await message.answer(text, reply_markup=main_keyboard(message.from_user.id))
+    await message.answer(text, parse_mode="Markdown", reply_markup=main_keyboard(message.from_user.id))
 
 @dp.message(F.text == "📊 Рефералы и бонусы")
 async def admin_ref_panel(message: Message):
@@ -311,7 +315,7 @@ async def user_detail(callback: CallbackQuery):
     bonus = users.get(str(user_id), {}).get("bonus_balance", 0)
     
     text = (
-        f"👤 Информация о пользователе\n\n"
+        f"👤 **Информация о пользователе**\n\n"
         f"🆔 ID: {user_id}\n"
         f"💰 Бонусный баланс: {bonus} BYN\n"
     )
@@ -326,7 +330,7 @@ async def user_detail(callback: CallbackQuery):
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
     ])
     
-    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "back_to_users")
