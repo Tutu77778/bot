@@ -204,17 +204,26 @@ async def cmd_start(message: Message):
     
     user_id = message.from_user.id
     
+    # Сохраняем пользователя в users.json
+    users = load_users()
+    if str(user_id) not in users:
+        users[str(user_id)] = {"order_counter": 0, "bonus_balance": 0}
+        save_users(users)
+    
+    # Реферальная система: если есть реферер и пользователь ещё не зарегистрирован как реферал
     referrals = load_referrals()
     if str(user_id) not in referrals and ref_id and ref_id != user_id:
+        # Сохраняем, кто пригласил этого пользователя
         referrals[str(user_id)] = {"referred_by": ref_id, "total_orders": 0, "bonus_earned": 0}
         save_referrals(referrals)
         
+        # Уведомляем того, кто пригласил
         try:
             await bot.send_message(
                 ref_id,
                 f"🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!\n"
                 f"👤 @{message.from_user.username or message.from_user.first_name}\n\n"
-                f"Когда он сделает заказ, вы получите бонус 5% от суммы (админ начислит вручную)."
+                f"Когда он сделает заказ, вы получите бонус (админ начислит вручную)."
             )
         except:
             pass
@@ -237,12 +246,12 @@ async def cmd_start(message: Message):
 
 @dp.message(F.text == "🔗 Моя реферальная ссылка")
 async def show_ref_link(message: Message):
-    # Получаем username бота динамически
     bot_info = await bot.get_me()
     bot_username = bot_info.username
     
     link = f"https://t.me/{bot_username}?start=ref_{message.from_user.id}"
     referrals = load_referrals()
+    # Кого пригласил этот пользователь
     my_refs = [uid for uid, data in referrals.items() if data.get("referred_by") == message.from_user.id]
     
     text = (
@@ -288,47 +297,74 @@ async def admin_ref_panel(message: Message):
         return
     
     users = load_users()
+    referrals = load_referrals()
     
     text = "📊 **Панель управления бонусами**\n\n"
-    text += "Нажми на пользователя, чтобы начислить бонус.\n\n"
+    text += "Здесь показаны все пользователи.\n"
+    text += "Нажми на пользователя, чтобы увидеть, кто его пригласил, и начислить бонус **пригласившему**.\n\n"
     text += "👥 **Список пользователей:**"
     
     keyboard = []
     for uid in users:
         username = await get_username(int(uid))
-        keyboard.append([InlineKeyboardButton(text=f"👤 {username}", callback_data=f"user_{uid}")])
+        # Показываем только тех, у кого есть реферер (кого пригласили)
+        if str(uid) in referrals:
+            keyboard.append([InlineKeyboardButton(text=f"👤 {username} (приглашён)", callback_data=f"ref_{uid}")])
+        else:
+            keyboard.append([InlineKeyboardButton(text=f"👤 {username}", callback_data=f"user_{uid}")])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     await message.answer(text, reply_markup=markup, parse_mode="Markdown")
 
-@dp.callback_query(lambda c: c.data.startswith("user_"))
+@dp.callback_query(lambda c: c.data.startswith(("user_", "ref_")))
 async def user_detail(callback: CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("⛔ Нет прав", show_alert=True)
         return
     
-    user_id = int(callback.data.split("_")[1])
+    data_parts = callback.data.split("_", 1)
+    prefix = data_parts[0]
+    user_id = int(data_parts[1])
+    
     referrals = load_referrals()
     users = load_users()
     
-    referred_by = referrals.get(str(user_id), {}).get("referred_by")
     bonus = users.get(str(user_id), {}).get("bonus_balance", 0)
     
-    text = (
-        f"👤 **Информация о пользователе**\n\n"
-        f"🆔 ID: {user_id}\n"
-        f"💰 Бонусный баланс: {bonus} BYN\n"
-    )
-    
-    if referred_by:
-        text += f"🔗 Приглашён пользователем: @{await get_username(referred_by)}\n"
+    if prefix == "ref":
+        # Это пользователь, который был приглашён
+        referred_by = referrals.get(str(user_id), {}).get("referred_by")
+        
+        text = (
+            f"👤 **Пользователь:** @{await get_username(user_id)}\n"
+            f"💰 Его бонусный баланс: {bonus} BYN\n\n"
+        )
+        
+        if referred_by:
+            text += f"🔗 **Приглашён пользователем:** @{await get_username(referred_by)}\n\n"
+            text += f"👇 Нажмите кнопку ниже, чтобы начислить бонус **пригласившему** (@{await get_username(referred_by)}) за этого реферала."
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💰 Начислить бонус пригласившему", callback_data=f"bonus_to_referrer_{user_id}")],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
+            ])
+        else:
+            text += f"🔗 Приглашён: никем\n"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
+            ])
     else:
-        text += f"🔗 Приглашён: никем\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 Начислить бонус", callback_data=f"add_bonus_{user_id}")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
-    ])
+        # Обычный пользователь (без реферала)
+        text = (
+            f"👤 **Пользователь:** @{await get_username(user_id)}\n"
+            f"💰 Бонусный баланс: {bonus} BYN\n\n"
+            f"🔗 Этот пользователь не был никим приглашён.\n"
+            f"Бонусы можно начислить ему напрямую (если нужно)."
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Начислить бонус напрямую", callback_data=f"direct_bonus_{user_id}")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
+        ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
@@ -340,24 +376,49 @@ async def back_to_users(callback: CallbackQuery):
         return
     
     users = load_users()
+    referrals = load_referrals()
+    
     keyboard = []
     for uid in users:
         username = await get_username(int(uid))
-        keyboard.append([InlineKeyboardButton(text=f"👤 {username}", callback_data=f"user_{uid}")])
+        if str(uid) in referrals:
+            keyboard.append([InlineKeyboardButton(text=f"👤 {username} (приглашён)", callback_data=f"ref_{uid}")])
+        else:
+            keyboard.append([InlineKeyboardButton(text=f"👤 {username}", callback_data=f"user_{uid}")])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
-    text = "📊 **Панель управления бонусами**\n\nНажми на пользователя, чтобы начислить бонус."
+    text = "📊 **Панель управления бонусами**\n\nНажми на пользователя для управления бонусами."
     await callback.message.edit_text(text, reply_markup=markup, parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data.startswith("add_bonus_"))
-async def add_bonus_start(callback: CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data.startswith("bonus_to_referrer_"))
+async def bonus_to_referrer(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав", show_alert=True)
+        return
+    
+    referred_user_id = int(callback.data.split("_")[3])
+    referrals = load_referrals()
+    
+    referrer_id = referrals.get(str(referred_user_id), {}).get("referred_by")
+    
+    if not referrer_id:
+        await callback.answer("Ошибка: не найден пригласивший", show_alert=True)
+        return
+    
+    await state.update_data(bonus_user_id=referrer_id, referred_user_id=referred_user_id)
+    await state.set_state(AddBonus.amount)
+    await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(referrer_id)}\n(бонус за приглашение @{await get_username(referred_user_id)})")
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("direct_bonus_"))
+async def direct_bonus(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("⛔ Нет прав", show_alert=True)
         return
     
     user_id = int(callback.data.split("_")[2])
-    await state.update_data(bonus_user_id=user_id)
+    await state.update_data(bonus_user_id=user_id, referred_user_id=None)
     await state.set_state(AddBonus.amount)
     await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(user_id)}:")
     await callback.answer()
@@ -379,14 +440,17 @@ async def add_bonus_amount(message: Message, state: FSMContext):
     
     data = await state.get_data()
     user_id = data.get("bonus_user_id")
+    referred_user_id = data.get("referred_user_id")
     
     new_balance = add_bonus_to_user(user_id, amount)
+    
+    bonus_text = f"за приглашение @{await get_username(referred_user_id)}" if referred_user_id else ""
     
     # Отправляем уведомление пользователю
     try:
         await bot.send_message(
             user_id,
-            f"🎉 **Вам начислен бонус!**\n\n"
+            f"🎉 **Вам начислен бонус!** {bonus_text}\n\n"
             f"💰 Сумма: {amount} BYN\n"
             f"💎 Ваш бонусный баланс: {new_balance} BYN\n\n"
             f"Бонусы можно использовать при следующем заказе.",
