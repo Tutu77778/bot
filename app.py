@@ -709,7 +709,7 @@ async def send_order_to_group(order, is_new=False):
     
     text = header + body
     
-    # Кнопки только для pending
+    # Кнопки только для статуса pending
     keyboard = []
     if order['status'] == "pending":
         keyboard = [
@@ -721,7 +721,7 @@ async def send_order_to_group(order, is_new=False):
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     
-    # Если есть message_id - редактируем существующее сообщение
+    # Если есть message_id - редактируем
     if order.get('message_id'):
         try:
             await bot.edit_message_text(
@@ -794,8 +794,14 @@ async def process_order_action(callback: CallbackQuery):
     update_order_status(order_id, new_status)
     order['status'] = new_status
     
-    # Обновляем сообщение в группе (закрытый чек)
+    # Обновляем сообщение в группе
     await send_order_to_group(order, is_new=False)
+    
+    # Убираем кнопки у callback-сообщения админа
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except:
+        pass
     
     # Отправляем уведомление ПОКУПАТЕЛЮ
     try:
