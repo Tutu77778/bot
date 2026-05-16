@@ -71,6 +71,7 @@ def update_order_status(order_id, status):
     for order in orders:
         if order.get("order_id") == order_id:
             order["status"] = status
+            order["status_updated_at"] = datetime.now().isoformat()
             save_orders(orders)
             return True
     return False
@@ -370,14 +371,18 @@ async def user_detail(callback: CallbackQuery):
     )
     
     if referred_by:
-        text += f"🔗 Приглашён пользователем: @{await get_username(referred_by)}\n"
+        text += f"🔗 Приглашён пользователем: @{await get_username(referred_by)}\n\n"
+        text += f"👇 Нажмите кнопку ниже, чтобы начислить бонус **пригласившему** (@{await get_username(referred_by)}) за этого реферала."
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Начислить бонус пригласившему", callback_data=f"bonus_to_referrer_{user_id}")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
+        ])
     else:
         text += f"🔗 Приглашён: никем\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 Начислить бонус", callback_data=f"add_bonus_{user_id}")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
-    ])
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Начислить бонус напрямую", callback_data=f"direct_bonus_{user_id}")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_users")]
+        ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
@@ -402,14 +407,34 @@ async def back_to_users(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=markup, parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data.startswith("add_bonus_"))
-async def add_bonus_start(callback: CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data.startswith("bonus_to_referrer_"))
+async def bonus_to_referrer(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав", show_alert=True)
+        return
+    
+    referred_user_id = int(callback.data.split("_")[3])
+    referrals = load_referrals()
+    
+    referrer_id = referrals.get(str(referred_user_id), {}).get("referred_by")
+    
+    if not referrer_id:
+        await callback.answer("Ошибка: не найден пригласивший", show_alert=True)
+        return
+    
+    await state.update_data(bonus_user_id=referrer_id, referred_user_id=referred_user_id)
+    await state.set_state(AddBonus.amount)
+    await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(referrer_id)}\n(бонус за приглашение @{await get_username(referred_user_id)})")
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("direct_bonus_"))
+async def direct_bonus(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("⛔ Нет прав", show_alert=True)
         return
     
     user_id = int(callback.data.split("_")[2])
-    await state.update_data(bonus_user_id=user_id)
+    await state.update_data(bonus_user_id=user_id, referred_user_id=None)
     await state.set_state(AddBonus.amount)
     await callback.message.answer(f"💰 Введите сумму бонуса (в BYN) для пользователя @{await get_username(user_id)}:")
     await callback.answer()
@@ -431,13 +456,16 @@ async def add_bonus_amount(message: Message, state: FSMContext):
     
     data = await state.get_data()
     user_id = data.get("bonus_user_id")
+    referred_user_id = data.get("referred_user_id")
     
     new_balance = add_bonus_to_user(user_id, amount)
+    
+    bonus_text = f"за приглашение @{await get_username(referred_user_id)}" if referred_user_id else ""
     
     try:
         await bot.send_message(
             user_id,
-            f"🎉 **Вам начислен бонус!**\n\n"
+            f"🎉 **Вам начислен бонус!** {bonus_text}\n\n"
             f"💰 Сумма: {amount} BYN\n"
             f"💎 Ваш бонусный баланс: {new_balance} BYN\n\n"
             f"Бонусы можно использовать при следующем заказе.",
@@ -613,8 +641,6 @@ async def finish_order(message: Message, state: FSMContext):
     order_id = str(order_number)
     
     used_bonus = data.get('used_bonus', 0)
-    promo_used = data.get('promo_used')
-    
     if used_bonus > 0:
         use_bonus(message.from_user.id, used_bonus)
     
@@ -626,7 +652,7 @@ async def finish_order(message: Message, state: FSMContext):
         "item": data['item'],
         "quantity": data['quantity'],
         "promo_discount": data.get('promo_discount', 0),
-        "promo_used": promo_used,
+        "promo_used": data.get('promo_used'),
         "used_bonus": used_bonus,
         "status": "pending",
         "date": datetime.now().isoformat(),
