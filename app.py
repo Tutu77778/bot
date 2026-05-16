@@ -71,7 +71,6 @@ def update_order_status(order_id, status):
     for order in orders:
         if order.get("order_id") == order_id:
             order["status"] = status
-            order["status_updated_at"] = datetime.now().isoformat()
             save_orders(orders)
             return True
     return False
@@ -710,7 +709,7 @@ async def send_order_to_group(order, is_new=False):
     
     text = header + body
     
-    # Кнопки только для статуса pending
+    # Кнопки только для pending
     keyboard = []
     if order['status'] == "pending":
         keyboard = [
@@ -722,8 +721,8 @@ async def send_order_to_group(order, is_new=False):
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     
-    # Если сообщение уже существует и мы не в режиме нового заказа - редактируем
-    if not is_new and order.get('message_id'):
+    # Если есть message_id - редактируем существующее сообщение
+    if order.get('message_id'):
         try:
             await bot.edit_message_text(
                 chat_id=ADMIN_GROUP_ID,
