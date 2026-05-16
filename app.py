@@ -460,7 +460,6 @@ async def add_bonus_amount(message: Message, state: FSMContext):
     
     new_balance = add_bonus_to_user(user_id, amount)
     
-    # Правильное сообщение: бонус за покупку реферала
     if referred_user_id:
         referred_username = await get_username(referred_user_id)
         bonus_text = f"за покупку вашего реферала @{referred_username}"
@@ -687,12 +686,16 @@ async def finish_order(message: Message, state: FSMContext):
 async def send_order_to_group(order):
     status_emoji = get_status_emoji(order['status'])
     
+    # Формируем заголовок в зависимости от статуса
     if order['status'] == "completed":
         header = "✅ ЗАКРЫТО\n\n"
+        show_buttons = False
     elif order['status'] == "cancelled":
         header = "❌ ОТМЕНЕНО\n\n"
+        show_buttons = False
     else:
         header = ""
+        show_buttons = True
     
     body = (
         f"{status_emoji} Заказ #{order['order_id']}\n\n"
@@ -710,8 +713,9 @@ async def send_order_to_group(order):
     
     text = header + body
     
+    # Кнопки только для pending-статуса
     keyboard = []
-    if order['status'] == "pending":
+    if show_buttons and order['status'] == "pending":
         keyboard = [
             [
                 InlineKeyboardButton(text="❌ Отмена", callback_data=f"cancel_{order['order_id']}"),
@@ -729,8 +733,8 @@ async def send_order_to_group(order):
                 text=text,
                 reply_markup=markup
             )
-        except:
-            pass
+        except Exception as e:
+            print(f"Ошибка редактирования: {e}")
     else:
         if order.get('photo'):
             msg = await bot.send_photo(ADMIN_GROUP_ID, order['photo'], caption=text, reply_markup=markup)
@@ -790,8 +794,10 @@ async def process_order_action(callback: CallbackQuery):
     update_order_status(order_id, new_status)
     order['status'] = new_status
     
+    # Обновляем сообщение в группе (кнопки уберутся внутри send_order_to_group)
     await send_order_to_group(order)
     
+    # Уведомляем покупателя
     try:
         await bot.send_message(
             chat_id=buyer_user_id,
